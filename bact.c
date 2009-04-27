@@ -55,7 +55,7 @@ static inline int untake_bacteria(cell_t *map, int pos) {
 }
 
 /* This is one step of recursion */
-static int do_step(cell_t *map, int bdepth, int sdepth, int last_qnum) {
+static int do_step(cell_t *map, int left1s, int sdepth, int last_qnum) {
     int i, p;
     cell_t *new_map = NULL;
     int local_depth = sdepth;
@@ -84,7 +84,7 @@ static int do_step(cell_t *map, int bdepth, int sdepth, int last_qnum) {
 #endif
 /* We did everything we can do without assigning another non-5 cell */
     local_depth++;
-    for (p = last_qnum + 1; p < nqs - n5s - bdepth; p++) {
+    for (p = last_qnum + 1; p < nqs - left1s + 1; p++) {
         i = qs[p];
         if (map[i] != 5)
             continue;
@@ -97,7 +97,7 @@ static int do_step(cell_t *map, int bdepth, int sdepth, int last_qnum) {
         solution[local_depth*2 - 2] = i % cols + 1;
         solution[local_depth*2 - 1] = i / cols + 1;
         if (untake_bacteria(new_map, i) == 0
-                && do_step(new_map, bdepth+1, local_depth, p) == 0) /* This worked */
+                && do_step(new_map, left1s-1, local_depth, p) == 0) /* This worked */
             return 0;
     }
 
@@ -134,7 +134,7 @@ int main() {
     n5s /= 4;
     debug(("We've got %d potential 5s, %d real ones\n", nqs, n5s));
 
-    if (do_step(map, 0, 0, -1)) {
+    if (do_step(map, nqs - n5s, 0, -1)) {
         printf("No\n");
     } else {
         printf("Yes\n");

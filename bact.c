@@ -11,10 +11,12 @@
 #endif
 
 #define MAX_SIZE 20
-#define MAX_QS 324
+#define MAX_QS (MAX_SIZE-2)*(MAX_SIZE-2)
 
 #define cell_t char
-#define MAP_SIZE (cols*rows*sizeof(cell_t))
+#define MAP_SIZE (MAX_SIZE*MAX_SIZE*sizeof(cell_t))
+
+static cell_t memory_pool[MAX_QS][MAX_SIZE*MAX_SIZE];
 
 static int cols, rows, area;
 static int nqs = 0, n5s, qs[MAX_QS];
@@ -55,9 +57,9 @@ static inline int untake_bacteria(cell_t *map, int pos) {
 }
 
 /* This is one step of recursion */
-static int do_step(cell_t *map, int left1s, int sdepth, int last_qnum) {
+static int do_step(int used1s, int sdepth, int last_qnum) {
     int i, p;
-    cell_t *new_map = NULL;
+    cell_t *map = memory_pool[used1s], *new_map = memory_pool[used1s+1];
     int local_depth = sdepth;
 
     for (i = 0; i < area; i++) {
@@ -84,20 +86,17 @@ static int do_step(cell_t *map, int left1s, int sdepth, int last_qnum) {
 #endif
 /* We did everything we can do without assigning another non-5 cell */
     local_depth++;
-    for (p = last_qnum + 1; p < nqs - left1s + 1; p++) {
+    for (p = last_qnum + 1; p < n5s + used1s + 1; p++) {
         i = qs[p];
         if (map[i] != 5)
             continue;
-
-        if (new_map == NULL)
-            new_map = malloc(MAP_SIZE);
 
         memcpy(new_map, map, MAP_SIZE);
 
         solution[local_depth*2 - 2] = i % cols + 1;
         solution[local_depth*2 - 1] = i / cols + 1;
         if (untake_bacteria(new_map, i) == 0
-                && do_step(new_map, left1s-1, local_depth, p) == 0) /* This worked */
+                && do_step(used1s+1, local_depth, p) == 0) /* This worked */
             return 0;
     }
 
@@ -106,12 +105,11 @@ static int do_step(cell_t *map, int left1s, int sdepth, int last_qnum) {
 
 int main() {
     int i, j, sum=0, pos;
-    cell_t *map;
+    cell_t *map = memory_pool[0];
 
     scanf("%d%d", &rows, &cols);
     area = cols*rows;
 
-    map = malloc(MAP_SIZE);
     solution = malloc(area*sizeof(char));
 
     for (i = 0, pos = 0; i < rows; i++)
@@ -134,7 +132,7 @@ int main() {
     n5s /= 4;
     debug(("We've got %d potential 5s, %d real ones\n", nqs, n5s));
 
-    if (do_step(map, nqs - n5s, 0, -1)) {
+    if (do_step(0, 0, -1)) {
         printf("No\n");
     } else {
         printf("Yes\n");

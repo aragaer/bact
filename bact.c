@@ -84,8 +84,8 @@ static int do_step5to1(int used1s, int sdepth, int last_qnum) {
         mp = map + i;
         if (*mp != 5)
             continue;
-        if ((memory_pool[0][i-1] == 5 && mp[-1] == 0)
-                || (memory_pool[0][i-rowlen] == 5 && mp[-rowlen] == 0))
+        if (((memory_pool[0][i-1] == 5 || memory_pool[0][i-1] == 1) && mp[-1] == 0)
+                || ((memory_pool[0][i-rowlen] == 5 || memory_pool[0][i-rowlen] == 1) && mp[-rowlen] == 0))
             continue; /* one of elder questionable neigbours is already turned into 1 */
 
         memcpy(new_map+rowlen, map+rowlen, copied_area*sizeof(cell_t));

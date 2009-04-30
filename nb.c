@@ -97,62 +97,61 @@ static int go_and_unwind_whats_left(int depth, int oldpos) {
         j = pos % cols;
         debug(("%d in position %d (%d,%d)\n", map[pos], pos, i+1, j+1));
         switch (map[pos]) {
-            case 0:
-            case 4:
-                debug(("No (badnum!)\n"));
+        case 0:
+        case 4:
+            debug(("No (badnum!)\n"));
+            return -1;
+        case 1:
+            link[pos].h = YOUNGER;
+            link[pos].v = YOUNGER;
+            break;
+        case 3:
+            if (i == 0 || j == 0) {
+                debug(("No (3 in the corner)\n"));
                 return -1;
-            case 1:
-                link[pos].h = YOUNGER;
-                link[pos].v = YOUNGER;
-                break;
-            case 3:
-                if (i == 0 || j == 0) {
-                    debug(("No (3 in the corner)\n"));
-                    return -1;
-                }
+            }
+            link[pos].h = OLDER;
+            link[pos].v = OLDER;
+            break;
+        case 2:
+            if (i == 0 && j == 0) {
+                debug(("No (2 in the corner)\n"));
+                return -1;
+            }
+            if (j && map[pos-1] == 1) { /* this 2 was before that neighbour */
                 link[pos].h = OLDER;
+                link[pos].v = YOUNGER;
+            } else if (!i) {                    /* Nowhere to go but to the right */
+                link[pos].h = OLDER;
+            } else if (!j) {                    /* Nowhere to go but up */
                 link[pos].v = OLDER;
-                break;
-            case 2:
-                if (i == 0 && j == 0) {
-                    debug(("No (2 in the corner)\n"));
-                    return -1;
-                }
-
-                if (j && map[pos-1] == 1) { /* this 2 was before that neighbour */
-                    link[pos].h = OLDER;
-                    link[pos].v = YOUNGER;
-                } else if (!i) {                    /* Nowhere to go but to the right */
-                    link[pos].h = OLDER;
-                } else if (!j) {                    /* Nowhere to go but up */
-                    link[pos].v = OLDER;
-                } else {
-                    debug(("Ugh. Dunnae what to do. Fork?\n"));
-                    /* Teh path 1 */
-                    memcpy(newmap, map, sizeof(teh_complete_map_memory[0]));
-                    memcpy(newlink, link, sizeof(teh_complete_link_memory[0]));
-                    newmap[pos-1]--;
-                    if (newmap[pos-1] == 0) 
-                        newmap[pos-1] = 4;
-                    newlink[pos].h = YOUNGER;
-                    newlink[pos].v = OLDER;
-                    if (go_and_unwind_whats_left(depth+1, pos-1) == 0)
-                        goto out;
-                    /* Teh path 2 */
-                    memcpy(newmap, map, sizeof(teh_complete_map_memory[0]));
-                    memcpy(newlink, link, sizeof(teh_complete_link_memory[0]));
-                    newmap[pos-cols]--;
-                    if (newmap[pos-cols] == 0) 
-                        newmap[pos-cols] = 4;
-                    newlink[pos].h = OLDER;
-                    newlink[pos].v = YOUNGER;
-                    if (go_and_unwind_whats_left(depth+1, pos-1) == 0)
-                        goto out;
-                    return -1;
-                }
-                break;
-            default:
-                break;
+            } else {
+                debug(("Ugh. Dunnae what to do. Fork?\n"));
+                /* Teh path 1 */
+                memcpy(newmap, map, sizeof(teh_complete_map_memory[0]));
+                memcpy(newlink, link, sizeof(teh_complete_link_memory[0]));
+                newmap[pos-1]--;
+                if (newmap[pos-1] == 0) 
+                    newmap[pos-1] = 4;
+                newlink[pos].h = YOUNGER;
+                newlink[pos].v = OLDER;
+                if (go_and_unwind_whats_left(depth+1, pos-1) == 0)
+                    goto out;
+                /* Teh path 2 */
+                memcpy(newmap, map, sizeof(teh_complete_map_memory[0]));
+                memcpy(newlink, link, sizeof(teh_complete_link_memory[0]));
+                newmap[pos-cols]--;
+                if (newmap[pos-cols] == 0) 
+                    newmap[pos-cols] = 4;
+                newlink[pos].h = OLDER;
+                newlink[pos].v = YOUNGER;
+                if (go_and_unwind_whats_left(depth+1, pos-1) == 0)
+                    goto out;
+                return -1;
+            }
+            break;
+        default:
+            break;
         }
         if (j && link[pos].h == YOUNGER) {
             map[pos-1]--;
@@ -171,11 +170,11 @@ static int go_and_unwind_whats_left(int depth, int oldpos) {
 #endif
     }
     teh_final_link = link;
-out:
 #ifndef ONLINE_JUDGE
     printf("Yay! Done!\n");
     printme(teh_complete_map_memory[0], link);
 #endif
+out:
     return 0;
 }
 
@@ -247,9 +246,13 @@ int main() {
         else if (mp[-1] == 1)
             pos -= 2;
 #ifndef ONLINE_JUDGE
-        print_out(basemap);
-        printf(" ||\n \\/\n");
+//        print_out(basemap);
+//        printf(" ||\n \\/\n");
 #endif
+    }
+    if (local_depth < area) {
+        printf("No\n");
+        return 0;
     }
     printf("Yes\n");
     for (pos = area; pos--; )

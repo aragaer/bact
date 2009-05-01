@@ -24,7 +24,7 @@ static int solution[MAX_SIZE*MAX_SIZE];
 #define YOUNGER -1
 #define OLDER 1
 
-static int cols, rows, area, rowlen;
+static int cols, rows, area, rowlen, real_deathcount;
 
 /* 
 * Links.
@@ -88,7 +88,50 @@ static inline int untake_bacteria(cell_t *map, int pos) {
         ||  (y < rows -1 && dec_bacteria(mp + rowlen)));
 }
 
-static int go_and_unwind_whats_left(int depth, int oldpos) {
+static inline int go_and_try_unmaking(int depth) {
+    cell_t *mp, *map = teh_complete_map_memory[depth+2];
+    struct link *link = teh_complete_link_memory[depth];
+    int pos, local_depth, deathcount = 0;
+
+    memcpy(map, teh_complete_map_memory[0], sizeof(teh_complete_map_memory[0]));
+
+    for (pos = 0; pos < area; pos++)
+        if (map[pos] == 1 && link[pos].h == OLDER) {/* One link is enough */
+            map[pos] = 5;
+            deathcount++;
+        }
+
+    if (deathcount != real_deathcount)
+        return -1;
+
+    debug(("=====[ Teh unwindzors! ]=====\n"));
+#ifndef ONLINE_JUDGE
+        print_out(map);
+        printf(" ||%d\n \\/\n", local_depth);
+#endif
+
+    for (pos = 0, local_depth = 0; pos < area && local_depth < area; pos++) {
+        mp = map + pos;
+        if (*mp != 1)
+            continue;
+        if (untake_bacteria(map, pos)) {
+            debug(("Ohnoes, we failed 8(\n"));
+            return -1;
+        }
+        solution[local_depth++] = pos;
+#ifndef ONLINE_JUDGE
+        print_out(map);
+        printf(" ||%d (%d)\n \\/\n", local_depth, pos);
+#endif
+        if (pos >= rowlen && mp[-rowlen] == 1)
+            pos -= rowlen + 1;
+        else if (pos > 0 && mp[-1] == 1)
+            pos -= 2;
+    }
+    return local_depth < area;
+}
+
+static int go_and_unwind_whats_left(int depth, int oldpos, int deadsfound) {
     int i, j, pos;
     char *map = teh_complete_map_memory[depth+1], *newmap = teh_complete_map_memory[depth+2];
     struct link *link = teh_complete_link_memory[depth], *newlink = teh_complete_link_memory[depth+1];
@@ -135,7 +178,7 @@ static int go_and_unwind_whats_left(int depth, int oldpos) {
                     newmap[pos-1] = 4;
                 newlink[pos].h = YOUNGER;
                 newlink[pos].v = OLDER;
-                if (go_and_unwind_whats_left(depth+1, pos-1) == 0)
+                if (go_and_unwind_whats_left(depth+1, pos-1, deadsfound) == 0)
                     goto out;
                 /* Teh path 2 */
                 memcpy(newmap, map, sizeof(teh_complete_map_memory[0]));
@@ -145,7 +188,7 @@ static int go_and_unwind_whats_left(int depth, int oldpos) {
                     newmap[pos-cols] = 4;
                 newlink[pos].h = OLDER;
                 newlink[pos].v = YOUNGER;
-                if (go_and_unwind_whats_left(depth+1, pos-1) == 0)
+                if (go_and_unwind_whats_left(depth+1, pos-1, deadsfound) == 0)
                     goto out;
                 return -1;
             }
@@ -155,13 +198,19 @@ static int go_and_unwind_whats_left(int depth, int oldpos) {
         }
         if (j && link[pos].h == YOUNGER) {
             map[pos-1]--;
-            if (map[pos-1] == 0) 
+            if (map[pos-1] == 0) {
                 map[pos-1] = 4;
+                if (++deadsfound > real_deathcount)
+                    return -1;
+            }
         }
         if (i && link[pos].v == YOUNGER) {
             map[pos-cols]--;
-            if (map[pos-cols] == 0) 
+            if (map[pos-cols] == 0) {
                 map[pos-cols] = 4;
+                if (++deadsfound > real_deathcount)
+                    return -1;
+            }
         }
 #ifndef ONLINE_JUDGE
         printf("These be %c and %c\n", vlink[link[pos].v+1], hlink[link[pos].h+1]);
@@ -174,6 +223,11 @@ static int go_and_unwind_whats_left(int depth, int oldpos) {
     printf("Yay! Done!\n");
     printme(teh_complete_map_memory[0], link);
 #endif
+    i = go_and_try_unmaking(depth);
+    if (i) {
+        debug(("Wha? Failed to unwind?? %d\n", i));
+        return -1;
+    }
 out:
     return 0;
 }
@@ -193,67 +247,28 @@ int main() {
         sum += basemap[pos];
     }
 
-    deathcount = area*3 - cols - rows - sum;
+    real_deathcount = area*3 - cols - rows - sum;
 #ifdef ONLINE_JUDGE /* short-circuit check */
-    if (deathcount%4) {
+    if (real_deathcount%4) {
         printf("No\n");
         return 0;
     }
 #endif
 
-    deathcount /= 4;
+    real_deathcount /= 4;
 
     memcpy(map, basemap, sizeof(teh_complete_map_memory[0]));
 #ifndef ONLINE_JUDGE
     printme(basemap, teh_complete_link_memory[0]);
     printf(" ||\n \\/\n");
 #endif
-    if (go_and_unwind_whats_left(0, area-1)) {
+    if (go_and_unwind_whats_left(0, area-1, 0)) {
         printf("No\n");
         return 0;
     }
 
     debug(("Outta unwinding!\n"));
 
-    for (pos = 0; pos < area; pos++)
-        if (basemap[pos] == 1 && teh_final_link[pos].h == OLDER) {/* One link is enough */
-            basemap[pos] = 5;
-            deathcount--;
-        }
-
-    if (deathcount) {
-        printf("No\n");
-        return 0;
-    }
-        
-#ifndef ONLINE_JUDGE
-    printf("===============\n");
-    printme(basemap, teh_final_link);
-    printf("===============\n");
-#endif
-
-    for (pos = 0, local_depth = 0; pos < area && local_depth < area; pos++) {
-        mp = basemap + pos;
-        if (*mp != 1)
-            continue;
-        if (untake_bacteria(basemap, pos)) {
-            printf("No\n");
-            return 0;
-        }
-        solution[local_depth++] = pos;
-        if (mp[-rowlen] == 1)
-            pos -= rowlen + 1;
-        else if (mp[-1] == 1)
-            pos -= 2;
-#ifndef ONLINE_JUDGE
-//        print_out(basemap);
-//        printf(" ||\n \\/\n");
-#endif
-    }
-    if (local_depth < area) {
-        printf("No\n");
-        return 0;
-    }
     printf("Yes\n");
     for (pos = area; pos--; )
         printf("%d %d\n", solution[pos] / rowlen + 1, solution[pos] % rowlen + 1);

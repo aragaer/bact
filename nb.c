@@ -11,20 +11,22 @@
 #endif
 
 #define MAX_SIZE 20
+#define MAX_AREA MAX_SIZE*MAX_SIZE
+#define MAX_LEVELS MAX_AREA
 
 #define cell_t char
 
-struct link {
-    char h, v;
-} static teh_complete_link_memory[MAX_SIZE*MAX_SIZE][MAX_SIZE*MAX_SIZE];
-static struct link *teh_final_link;
-static cell_t teh_complete_map_memory[MAX_SIZE*MAX_SIZE][MAX_SIZE*MAX_SIZE];
-static int solution[MAX_SIZE*MAX_SIZE];
+struct level_data {
+    struct link {
+        char h, v;
+    } link[MAX_AREA];
+    cell_t map[MAX_AREA], unwinded[MAX_AREA];
+    int solution_depth, position, found5s;
+} static start[MAX_LEVELS];
 
-#define YOUNGER -1
-#define OLDER 1
+static int solution[MAX_AREA];
 
-static int cols, rows, area, rowlen, real_deathcount;
+static int cols, rows, area, real_deathcount;
 
 /* 
 * Links.
@@ -34,33 +36,38 @@ static int cols, rows, area, rowlen, real_deathcount;
 * -1 means that THIS cell is YOUNGER and bacteria moved FROM here
 */
 
-static char hlink[] = {'<', '?', '>'};
-static char vlink[] = {'^', '?', 'v'};
+#define YOUNGER -1
+#define OLDER 1
 
 #ifndef ONLINE_JUDGE
+static char hlink[] = "<?>";
+static char vlink[] = "^?v";
+
 static void print_out(cell_t *map) {
     int i, j;
     for (i = 0; i < rows; i++) {
         for (j = 0; j < cols; j++)
-            printf("%d ", map[i*rowlen + j]);
+            printf("%d ", map[i*cols + j]);
         printf("\n");
     }
 }
 
-static void printme(cell_t *map, struct link *link) {
+static void printlevel(struct level_data *level) {
     int i, j, pos;
+    cell_t *map = level->unwinded;
+    struct link *link = level->link;
     for (i = 0, pos = 0; i < rows; i++) {
         for (j = 0; j < cols; j++, pos++) {
             printf("%d", map[pos]);
-            if (j < cols - 1)
-                printf("%c", hlink[link[pos+1].h+1]);
+            if (j == cols)
+                break;
+            printf("%c", hlink[link[pos+1].h+1]);
         }
         printf("\n");
         if (i == rows-1)
             break;
-        for (j = 0; j < cols; j++) {
-            printf("%c ", vlink[link[i*cols + j +cols].v+1]);
-        }
+        for (j = 0; j < cols; j++)
+            printf("%c ", vlink[link[i*cols + j + cols].v+1]);
         printf("\n");
     }
 }
@@ -82,113 +89,119 @@ static inline int untake_bacteria(cell_t *map, int pos) {
     int y = pos /cols;
     cell_t *mp = map+pos;
     *mp = 0;
-    return ((x > 0 && dec_bacteria(mp - 1))
-        ||  (y > 0 && dec_bacteria(mp - rowlen))
-        ||  (x < cols -1 && dec_bacteria(mp + 1))
-        ||  (y < rows -1 && dec_bacteria(mp + rowlen)));
+    return ((x > 0      && dec_bacteria(mp - 1))
+        ||  (y > 0      && dec_bacteria(mp - cols))
+        ||  (x < cols-1 && dec_bacteria(mp + 1))
+        ||  (y < rows-1 && dec_bacteria(mp + cols)));
 }
 
-static inline int go_and_try_unmaking(int depth) {
-    cell_t *mp, *map = teh_complete_map_memory[depth+2];
-    struct link *link = teh_complete_link_memory[depth];
-    int pos, local_depth, deathcount = 0;
+static inline int careful_dec(struct level_data *level, int pos) {
+    cell_t *map = level->map;
+    if (--map[pos] == 0) {
+        if (level->found5s == real_deathcount)
+            return -1;
+        map[pos] = 4;
+        level->found5s++;
+        level->unwinded[pos] = 5;
+    }
+    return 0;
+}
 
-    memcpy(map, teh_complete_map_memory[0], sizeof(teh_complete_map_memory[0]));
+/* 0 if everything is solved, -1 on error */
+static inline int unmake(struct level_data *level) {
+    cell_t *mp, *map = level->unwinded;
+    struct link *link = level->link;
+    int pos, local_depth = level->solution_depth;
 
-    for (pos = 0; pos < area; pos++)
-        if (map[pos] == 1 && link[pos].h == OLDER) {/* One link is enough */
-            map[pos] = 5;
-            deathcount++;
-        }
-
-    if (deathcount != real_deathcount)
-        return -1;
-
-    debug(("=====[ Teh unwindzors! ]=====\n"));
 #ifndef ONLINE_JUDGE
         print_out(map);
         printf(" ||%d\n \\/\n", local_depth);
 #endif
+    if (level->found5s == real_deathcount) /* We have located all the 5's. Now just solve it */
+        level->position = -1;
 
-    for (pos = 0, local_depth = 0; pos < area && local_depth < area; pos++) {
+    for (pos = level->position + 1; pos < area && local_depth < area; pos++) {
+        if (level->position && pos < level->position)
+            pos = level->position;
         mp = map + pos;
         if (*mp != 1)
             continue;
-        if (untake_bacteria(map, pos)) {
-            debug(("Ohnoes, we failed 8(\n"));
+        if (untake_bacteria(map, pos))
             return -1;
-        }
         solution[local_depth++] = pos;
 #ifndef ONLINE_JUDGE
-        print_out(map);
-        printf(" ||%d (%d)\n \\/\n", local_depth, pos);
+//        print_out(map);
+//        printf(" ||%d (%d)\n \\/\n", local_depth, pos);
 #endif
-        if (pos >= rowlen && mp[-rowlen] == 1)
-            pos -= rowlen + 1;
+        if (pos >= cols && mp[-cols] == 1)
+            pos -= cols + 1;
         else if (pos > 0 && mp[-1] == 1)
             pos -= 2;
     }
-    return local_depth < area;
+    level->solution_depth = local_depth;
+    debug(("Unmade %d of %d below position %d\n", local_depth, area, level->position));
+    return local_depth == area
+        ? 0
+        : -1;
 }
 
-static int go_and_unwind_whats_left(int depth, int oldpos, int deadsfound) {
-    int i, j, pos;
-    char *map = teh_complete_map_memory[depth+1], *newmap = teh_complete_map_memory[depth+2];
-    struct link *link = teh_complete_link_memory[depth], *newlink = teh_complete_link_memory[depth+1];
-    for (pos = oldpos+1; pos--;) {
+static int find_order(struct level_data *level) {
+    int i, j, pos, *deadsfound = &level->found5s;
+    struct level_data *newlevel = level+1;
+    cell_t *map = level->map, *newmap = newlevel->map;
+    struct link *link = level->link, *newlink = newlevel->link;
+
+    for (pos = level->position; pos--;) {
         i = pos / cols;
         j = pos % cols;
         debug(("%d in position %d (%d,%d)\n", map[pos], pos, i+1, j+1));
         switch (map[pos]) {
         case 0:
         case 4:
-            debug(("No (badnum!)\n"));
-            return -1;
+            return -1; /* Not supposed to be here */
         case 1:
             link[pos].h = YOUNGER;
             link[pos].v = YOUNGER;
             break;
         case 3:
-            if (i == 0 || j == 0) {
-                debug(("No (3 in the corner)\n"));
-                return -1;
-            }
+            if (i == 0 || j == 0)
+                return -1; /* 3 in the corner */
             link[pos].h = OLDER;
             link[pos].v = OLDER;
             break;
         case 2:
-            if (i == 0 && j == 0) {
-                debug(("No (2 in the corner)\n"));
-                return -1;
-            }
+            if (i == 0 && j == 0)
+                return -1; /* 2 in the end */
             if (j && map[pos-1] == 1) { /* this 2 was before that neighbour */
                 link[pos].h = OLDER;
                 link[pos].v = YOUNGER;
+            } else if (j && map[pos-1] == 4) { /* this 2 was after that neighbour */
+                link[pos].h = YOUNGER;
+                link[pos].v = OLDER;
             } else if (!i) {                    /* Nowhere to go but to the right */
                 link[pos].h = OLDER;
             } else if (!j) {                    /* Nowhere to go but up */
                 link[pos].v = OLDER;
             } else {
-                debug(("Ugh. Dunnae what to do. Fork?\n"));
+                debug(("Forking. Do some unwinding first\n"));
+                level->position = pos;
+                if (unmake(level) == 0) /* Unmake as much as possible. If we succeed, go out */
+                    goto out;
+                debug(("Forking now\n"));
                 /* Teh path 1 */
-                memcpy(newmap, map, sizeof(teh_complete_map_memory[0]));
-                memcpy(newlink, link, sizeof(teh_complete_link_memory[0]));
-                newmap[pos-1]--;
-                if (newmap[pos-1] == 0) 
-                    newmap[pos-1] = 4;
+                memcpy(newlevel, level, sizeof(struct level_data));
+                careful_dec(newlevel, pos-1);
                 newlink[pos].h = YOUNGER;
                 newlink[pos].v = OLDER;
-                if (go_and_unwind_whats_left(depth+1, pos-1, deadsfound) == 0)
+                if (find_order(newlevel) == 0)
                     goto out;
+                debug(("Path 1 failed\n"));
                 /* Teh path 2 */
-                memcpy(newmap, map, sizeof(teh_complete_map_memory[0]));
-                memcpy(newlink, link, sizeof(teh_complete_link_memory[0]));
-                newmap[pos-cols]--;
-                if (newmap[pos-cols] == 0) 
-                    newmap[pos-cols] = 4;
+                memcpy(newlevel, level, sizeof(struct level_data));
+                careful_dec(newlevel, pos-cols);
                 newlink[pos].h = OLDER;
                 newlink[pos].v = YOUNGER;
-                if (go_and_unwind_whats_left(depth+1, pos-1, deadsfound) == 0)
+                if (find_order(newlevel) == 0)
                     goto out;
                 return -1;
             }
@@ -196,55 +209,43 @@ static int go_and_unwind_whats_left(int depth, int oldpos, int deadsfound) {
         default:
             break;
         }
-        if (j && link[pos].h == YOUNGER) {
-            map[pos-1]--;
-            if (map[pos-1] == 0) {
-                map[pos-1] = 4;
-                if (++deadsfound > real_deathcount)
-                    return -1;
-            }
-        }
-        if (i && link[pos].v == YOUNGER) {
-            map[pos-cols]--;
-            if (map[pos-cols] == 0) {
-                map[pos-cols] = 4;
-                if (++deadsfound > real_deathcount)
-                    return -1;
-            }
+
+        if ((j && link[pos].h == YOUNGER && careful_dec(level, pos-1))
+                || (i && link[pos].v == YOUNGER && careful_dec(level, pos-cols)))
+            return -1;
+        if (*deadsfound == real_deathcount) {
+            level->position = pos;
+            return unmake(level);
         }
 #ifndef ONLINE_JUDGE
-        printf("These be %c and %c\n", vlink[link[pos].v+1], hlink[link[pos].h+1]);
-        printme(map, link);
+        printf("These be %c and %c\n", hlink[link[pos].h+1], vlink[link[pos].v+1]);
+        printlevel(level);
         printf(" ||\n \\/\n");
 #endif
     }
-    teh_final_link = link;
-#ifndef ONLINE_JUDGE
-    printf("Yay! Done!\n");
-    printme(teh_complete_map_memory[0], link);
-#endif
-    i = go_and_try_unmaking(depth);
-    if (i) {
-        debug(("Wha? Failed to unwind?? %d\n", i));
+    if (*deadsfound < real_deathcount) {
+        debug(("Nah, we lost some deads\n"));
         return -1;
     }
+#ifndef ONLINE_JUDGE
+    printf("Yay! Done!\n");
+    printlevel(level);
+#endif
+
 out:
     return 0;
 }
 
 int main() {
-    int sum, pos, local_depth, deathcount;
-    cell_t *basemap = teh_complete_map_memory[0];
-    cell_t *map = teh_complete_map_memory[1];
-    cell_t *mp;
+    int sum, pos;
 
     scanf("%d%d", &rows, &cols);
     area = cols*rows;
-    rowlen = cols;
+    cols = cols;
 
     for (pos = 0, sum = 0; pos < area; pos++) {
-        scanf("%d", &basemap[pos]);
-        sum += basemap[pos];
+        scanf("%d", start->map + pos);
+        sum += start->map[pos];
     }
 
     real_deathcount = area*3 - cols - rows - sum;
@@ -254,23 +255,15 @@ int main() {
         return 0;
     }
 #endif
-
     real_deathcount /= 4;
 
-    memcpy(map, basemap, sizeof(teh_complete_map_memory[0]));
-#ifndef ONLINE_JUDGE
-    printme(basemap, teh_complete_link_memory[0]);
-    printf(" ||\n \\/\n");
-#endif
-    if (go_and_unwind_whats_left(0, area-1, 0)) {
+    memcpy(start->unwinded, start->map, sizeof(start->map));
+    start->position = area;
+
+    if (find_order(start) == 0) {
+        printf("Yes\n");
+        for (pos = area; pos--; )
+            printf("%d %d\n", solution[pos] / cols + 1, solution[pos] % cols + 1);
+    } else
         printf("No\n");
-        return 0;
-    }
-
-    debug(("Outta unwinding!\n"));
-
-    printf("Yes\n");
-    for (pos = area; pos--; )
-        printf("%d %d\n", solution[pos] / rowlen + 1, solution[pos] % rowlen + 1);
-    return 0;
 }

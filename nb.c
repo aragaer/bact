@@ -16,12 +16,14 @@
 
 #define cell_t char
 
+#define UNWIND_THRESHOLD 10
+
 struct level_data {
     struct link {
         char h, v;
     } link[MAX_AREA];
     cell_t map[MAX_AREA], unwinded[MAX_AREA];
-    int solution_depth, position, found5s;
+    int solution_depth, position, found5s, last_unmake;
 } static start[MAX_LEVELS];
 
 static int solution[MAX_AREA];
@@ -109,22 +111,17 @@ static inline int careful_dec(struct level_data *level, int pos) {
 
 /* 0 if everything is solved, -1 on error */
 static inline int unmake(struct level_data *level) {
-    cell_t *mp, *map = level->unwinded;
+    cell_t *map = level->unwinded;
     struct link *link = level->link;
+    const int limit = level->position + 1;
     int pos, local_depth = level->solution_depth;
 
 #ifndef ONLINE_JUDGE
         print_out(map);
         printf(" ||%d\n \\/\n", local_depth);
 #endif
-    if (level->found5s == real_deathcount) /* We have located all the 5's. Now just solve it */
-        level->position = -1;
-
-    for (pos = level->position + 1; pos < area && local_depth < area; pos++) {
-        if (level->position && pos < level->position)
-            pos = level->position;
-        mp = map + pos;
-        if (*mp != 1)
+    for (pos = limit; pos < area && local_depth < area; pos++) {
+        if (map[pos] != 1)
             continue;
         if (untake_bacteria(map, pos))
             return -1;
@@ -133,11 +130,15 @@ static inline int unmake(struct level_data *level) {
 //        print_out(map);
 //        printf(" ||%d (%d)\n \\/\n", local_depth, pos);
 #endif
-        if (pos >= cols && mp[-cols] == 1)
+        if (pos >= limit + cols && map[pos-cols] == 1)
             pos -= cols + 1;
-        else if (pos > 0 && mp[-1] == 1)
+        else if (pos > limit && map[pos-1] == 1)
             pos -= 2;
+        else /* fast-forward to next 1 */
+            while (map[pos+1] != 1 && pos < area)
+                pos++;
     }
+    level->last_unmake = limit;
     level->solution_depth = local_depth;
     debug(("Unmade %d of %d below position %d\n", local_depth, area, level->position));
     return local_depth == area
@@ -151,9 +152,14 @@ static int find_order(struct level_data *level) {
     cell_t *map = level->map, *newmap = newlevel->map;
     struct link *link = level->link, *newlink = newlevel->link;
 
+    i = level->position / cols;
+    j = level->position % cols;
     for (pos = level->position; pos--;) {
-        i = pos / cols;
-        j = pos % cols;
+        if (!j--) {
+            j = cols-1;
+            if (!--i && *deadsfound < real_deathcount) /* we won't find any dead in last line */
+                return -1;
+        }
         debug(("%d in position %d (%d,%d)\n", map[pos], pos, i+1, j+1));
         switch (map[pos]) {
         case 0:
@@ -185,55 +191,44 @@ static int find_order(struct level_data *level) {
             } else {
                 debug(("Forking. Do some unwinding first\n"));
                 level->position = pos;
-                if (unmake(level) == 0) /* Unmake as much as possible. If we succeed, go out */
-                    goto out;
+                if (level->last_unmake - pos > UNWIND_THRESHOLD)
+                    unmake(level); /* Unmake as much as possible. No chance to succeed though */
                 debug(("Forking now\n"));
-                /* Teh path 1 */
+                /* Path 1 uses new level, path 2 uses current level */
                 memcpy(newlevel, level, sizeof(struct level_data));
-                careful_dec(newlevel, pos-1);
                 newlink[pos].h = YOUNGER;
                 newlink[pos].v = OLDER;
-                if (find_order(newlevel) == 0)
-                    goto out;
+                link[pos].h = OLDER;
+                link[pos].v = YOUNGER;
+                careful_dec(newlevel, pos-1);
+                if (find_order(newlevel) == 0) /* Path 1 succeeded */
+                    return 0;
                 debug(("Path 1 failed\n"));
-                /* Teh path 2 */
-                memcpy(newlevel, level, sizeof(struct level_data));
-                careful_dec(newlevel, pos-cols);
-                newlink[pos].h = OLDER;
-                newlink[pos].v = YOUNGER;
-                if (find_order(newlevel) == 0)
-                    goto out;
-                return -1;
             }
             break;
         default:
             break;
         }
 
-        if ((j && link[pos].h == YOUNGER && careful_dec(level, pos-1))
-                || (i && link[pos].v == YOUNGER && careful_dec(level, pos-cols)))
-            return -1;
-        if (*deadsfound == real_deathcount) {
-            level->position = pos;
-            return unmake(level);
-        }
 #ifndef ONLINE_JUDGE
         printf("These be %c and %c\n", hlink[link[pos].h+1], vlink[link[pos].v+1]);
         printlevel(level);
         printf(" ||\n \\/\n");
 #endif
+        if ((j && link[pos].h == YOUNGER && careful_dec(level, pos-1))
+                || (i && link[pos].v == YOUNGER && careful_dec(level, pos-cols)))
+            return -1;
+        if (*deadsfound < real_deathcount)
+            continue;
+        if (*deadsfound == real_deathcount) {
+            level->position = -1;
+            return unmake(level);
+        }
+        return -1; /* deadsfound > real_deathcount */
     }
-    if (*deadsfound < real_deathcount) {
-        debug(("Nah, we lost some deads\n"));
-        return -1;
-    }
-#ifndef ONLINE_JUDGE
-    printf("Yay! Done!\n");
-    printlevel(level);
-#endif
 
-out:
-    return 0;
+    debug(("Nah, we lost some deads\n"));
+    return -1;
 }
 
 int main() {
@@ -241,7 +236,6 @@ int main() {
 
     scanf("%d%d", &rows, &cols);
     area = cols*rows;
-    cols = cols;
 
     for (pos = 0, sum = 0; pos < area; pos++) {
         scanf("%d", start->map + pos);
@@ -259,6 +253,7 @@ int main() {
 
     memcpy(start->unwinded, start->map, sizeof(start->map));
     start->position = area;
+    start->last_unmake = area;
 
     if (find_order(start) == 0) {
         printf("Yes\n");

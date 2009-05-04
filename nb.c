@@ -2,7 +2,9 @@
 #include <string.h>
 #include <stdlib.h>
 
-#ifndef NO_INLINE
+#ifdef NO_INLINE
+#define inline
+#else
 #define inline __inline
 #endif
 
@@ -25,7 +27,7 @@ struct level_data {
     struct link {
         char h, v;
     } link[MAX_AREA];
-    cell_t map[MAX_AREA], unwinded[MAX_AREA];
+    cell_t map[MAX_AREA], unwinded[MAX_AREA+1];
     int solution_depth, position, found5s, last_unmake;
 } static start[MAX_LEVELS];
 
@@ -115,18 +117,23 @@ static inline int unmake(struct level_data *level) {
     cell_t *map = level->unwinded;
     struct link *link = level->link;
     const int limit = level->position;
-    int pos, local_depth = level->solution_depth;
+    int pos = limit, local_depth = level->solution_depth;
 
 #ifndef ONLINE_JUDGE
         print_out(map);
         printf(" ||%d\n \\/\n", local_depth);
 #endif
-    for (pos = limit; pos < area && local_depth < area; pos++) {
-        if (map[pos] != 1)
-            continue;
+    debug(("Unwinding from below %d\n", limit));
+    while (map[pos] != 1)
+        pos++;
+    pos--;
+    debug(("First 1 located at %d\n", pos));
+    while (++pos < area) {
         if (untake_bacteria(map, pos))
             return -1;
         solution[local_depth++] = pos;
+        if (local_depth == area)
+            break;
 #ifndef ONLINE_JUDGE
 //        print_out(map);
 //        printf(" ||%d (%d)\n \\/\n", local_depth, pos);
@@ -136,8 +143,9 @@ static inline int unmake(struct level_data *level) {
         else if (pos > limit && map[pos-1] == 1)
             pos -= 2;
         else /* fast-forward to next 1 */
-            while (map[pos+1] != 1 && pos < area)
+            while (map[pos+1] != 1)
                 pos++;
+        debug(("Next 1 located at %d\n", pos));
     }
     level->last_unmake = limit;
     level->solution_depth = local_depth;
@@ -150,6 +158,11 @@ static int find_order(struct level_data *level) {
     struct level_data *newlevel = level+1;
     cell_t *map = level->map, *newmap = newlevel->map;
     struct link *link = level->link, *newlink = newlevel->link;
+
+    if (*deadsfound == real_deathcount) { /* Unlikely but who knows */
+        level->position = 0;
+        return unmake(level);
+    }
 
     i = level->position / cols;
     j = level->position % cols;
@@ -173,7 +186,7 @@ static int find_order(struct level_data *level) {
                 return -1;
             link[pos].h = OLDER;
             link[pos].v = OLDER;
-            break;
+            continue;
         case 2:
             if (i == 0 && j == 0)               /* 2 in the end */
                 return -1;
@@ -257,6 +270,7 @@ int main() {
     real_deathcount /= 4;
 
     memcpy(start->unwinded, start->map, sizeof(start->map));
+    start->unwinded[area] = 1;
     start->position = area;
     start->last_unmake = area;
 

@@ -144,7 +144,7 @@ static int find_order(struct level_data *level) {
         case 2:
             if (j[pos] == 0)                         /* Nowhere to go, just one direction */
                 continue;
-            if (right[pos] == MAX_AREA+2)
+            if (right[pos] == MAX_AREA+1)
                 switch (map[up[pos]]) {
                 case 1:
                     careful_dec(level, left[pos]);

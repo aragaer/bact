@@ -20,7 +20,6 @@
 #define MAX_LEVELS MAX_AREA - 2*MAX_SIZE + 1
 
 #define cell_t char
-#define link_t char
 
 #define UNWIND_THRESHOLD 10
 
@@ -41,17 +40,7 @@ static int cols, rows, area, real_deathcount;
 *  1 means that THIS cell is YOUNGER and bacteria moved FROM here
 */
 
-#define IS_H_YOUNGER(x) (x & 2)
-#define IS_V_YOUNGER(x) (x & 1)
-
-#define LINK_OO 0
-#define LINK_OY 1
-#define LINK_YO 2
-#define LINK_YY 3
-
 #ifndef ONLINE_JUDGE
-static char hlink[] = ">><<";
-static char vlink[] = "v^v^";
 
 #define printlevel(l) print_out(l->unwinded)
 
@@ -88,20 +77,19 @@ static inline int untake_bacteria(cell_t *map, int pos) {
 }
 
 /* Take out a bacteria. If it makes cell empty, add 4 and increase number of found deads. */
-static inline int careful_dec(struct level_data *level, int pos) {
+static inline void careful_dec(struct level_data *level, int pos) {
     cell_t *map = level->map;
     if (--map[pos] == 0) {
         map[pos] = 4;
         level->found5s++;
         level->unwinded[pos] = 5;
     }
-    return 0;
 }
 
 /* 0 if everything is solved, -1 on error, 1 on partial success */
 static inline int unmake(struct level_data *level) {
     cell_t *map = level->unwinded;
-    const int limit = level->position;
+    int limit = level->position;
     int pos = limit, local_depth = level->solution_depth;
 
 #ifndef ONLINE_JUDGE
@@ -141,7 +129,6 @@ static inline int unmake(struct level_data *level) {
 static int find_order(struct level_data *level) {
     int i, j, pos, *deadsfound = &level->found5s;
     cell_t *map = level->map;
-    link_t link;
 
     if (*deadsfound == real_deathcount) { /* Unlikely but who knows */
         level->position = 0;
@@ -153,36 +140,35 @@ static int find_order(struct level_data *level) {
     for (pos = level->position; pos--;) {
         if (!j--) {
             j = cols-1;
-            if (!--i && *deadsfound < real_deathcount) /* we won't find any dead in last line */
+            if (!--i) /* we won't find any dead in last line */
                 return -1;
         }
+        /* NOTE: i can never be 0 here */
         debug(("%d in position %d (%d,%d)\n", map[pos], pos, i+1, j+1));
         switch (map[pos]) {
         case 0:
         case 4:
             return -1;                          /* Not supposed to be here */
         case 1:
-            link = LINK_YY;
+            careful_dec(level, pos-cols);
+            if (j)
+                careful_dec(level, pos-1);
             break;
         case 3:
-            if (i == 0 || j == 0)               /* 3 in the corner */
+            if (j == 0)                         /* 3 in the corner */
                 return -1;
-            link = LINK_OO;
             continue;
         case 2:
-            if (i == 0 && j == 0)               /* 2 in the end */
-                return -1;
-            if (j && map[pos-1] == 1) {         /* this 2 was before that neighbour */
-                link = LINK_OY;
-            } else if (j && map[pos-1] == 4) {  /* this 2 was after that neighbour */
-                link = LINK_YO;
-            } else if (i && j == cols-1 && map[pos-cols] == 1) {
-                link = LINK_YO;
-            } else if (i && j == cols-1 && map[pos-cols] == 4) {
-                link = LINK_OY;
-            } else if (!i || !j) {                    /* Nowhere to go, just one direction */
-                link = LINK_OO;
+            if (j == 0)                         /* Nowhere to go, just one direction */
                 continue;
+            if (map[pos-1] == 1) {              /* this 2 was before that neighbour */
+                careful_dec(level, pos-cols);
+            } else if (map[pos-1] == 4) {       /* this 2 was after that neighbour */
+                careful_dec(level, pos-1);
+            } else if (j == cols-1 && map[pos-cols] == 1) {
+                careful_dec(level, pos-1);
+            } else if (j == cols-1 && map[pos-cols] == 4) {
+                careful_dec(level, pos-cols);
             } else {
                 debug(("Forking. Do some unwinding first\n"));
                 level->position = pos;
@@ -191,7 +177,7 @@ static int find_order(struct level_data *level) {
                 debug(("Forking now\n"));
                 /* Path 1 uses new level, path 2 uses current level */
                 memcpy(level+1, level, sizeof(struct level_data));
-                link = LINK_OY;
+                careful_dec(level, pos-cols);
                 careful_dec(level+1, pos-1);
                 if (find_order(level+1) == 0) /* Path 1 succeeded */
                     return 0;
@@ -203,13 +189,9 @@ static int find_order(struct level_data *level) {
         }
 
 #ifndef ONLINE_JUDGE
-        printf("These be %c and %c\n", hlink[link], vlink[link]);
         printlevel(level);
         printf(" ||\n \\/\n");
 #endif
-        if ((j && IS_H_YOUNGER(link) && careful_dec(level, pos-1))
-                || (i && IS_V_YOUNGER(link) && careful_dec(level, pos-cols)))
-            return -1;
         if (*deadsfound < real_deathcount)
             continue;
         if (*deadsfound == real_deathcount) {

@@ -24,10 +24,13 @@
 #define UNWIND_THRESHOLD 10
 
 struct level_data {
-    cell_t map[MAX_AREA], unwinded[MAX_AREA+1];
+    cell_t map[MAX_AREA+2], unwinded[MAX_AREA+2];
     int solution_depth, position, found5s, last_unmake;
 } static start[MAX_LEVELS];
 
+
+static int i[MAX_AREA], j[MAX_AREA];
+static int up[MAX_AREA], down[MAX_AREA], left[MAX_AREA], right[MAX_AREA];
 static int solution[MAX_AREA];
 
 static int cols, rows, area, real_deathcount;
@@ -66,14 +69,11 @@ static inline int dec_bacteria(cell_t *mp) {
 
 /* Revert a placement of bacteria */
 static inline int untake_bacteria(cell_t *map, int pos) {
-    int x = pos % cols;
-    int y = pos /cols;
-    cell_t *mp = map+pos;
-    *mp = 0;
-    return ((x > 0      && dec_bacteria(mp - 1))
-        ||  (y > 0      && dec_bacteria(mp - cols))
-        ||  (x < cols-1 && dec_bacteria(mp + 1))
-        ||  (y < rows-1 && dec_bacteria(mp + cols)));
+    map[pos] = 0;
+    return (dec_bacteria(map + up[pos])
+        ||  dec_bacteria(map + down[pos])
+        ||  dec_bacteria(map + left[pos])
+        ||  dec_bacteria(map + right[pos]));
 }
 
 /* Take out a bacteria. If it makes cell empty, add 4 and increase number of found deads. */
@@ -99,26 +99,23 @@ static inline int unmake(struct level_data *level) {
     debug(("Unwinding from below %d\n", limit));
     while (map[pos] != 1)
         pos++;
-    pos--;
-    debug(("First 1 located at %d\n", pos));
-    while (++pos < area) {
+    while (pos < area) {
         if (untake_bacteria(map, pos))
             return -1;
         solution[local_depth++] = pos;
         if (local_depth == area)
-            break;
+            return 0;
 #ifndef ONLINE_JUDGE
 //        print_out(map);
 //        printf(" ||%d (%d)\n \\/\n", local_depth, pos);
 #endif
-        if (pos >= limit + cols && map[pos-cols] == 1)
-            pos -= cols + 1;
-        else if (pos > limit && map[pos-1] == 1)
-            pos -= 2;
+        if (pos >= limit + cols && map[up[pos]] == 1)
+            pos = up[pos];
+        else if (pos > limit && map[left[pos]] == 1)
+            pos = left[pos];
         else /* fast-forward to next 1 */
-            while (map[pos+1] != 1)
+            while (map[pos] != 1)
                 pos++;
-        debug(("Next 1 located at %d\n", pos));
     }
     level->last_unmake = limit;
     level->solution_depth = local_depth;
@@ -127,7 +124,7 @@ static inline int unmake(struct level_data *level) {
 }
 
 static int find_order(struct level_data *level) {
-    int i, j, pos, *deadsfound = &level->found5s;
+    int pos, *deadsfound = &level->found5s;
     cell_t *map = level->map;
 
     if (*deadsfound == real_deathcount) { /* Unlikely but who knows */
@@ -135,41 +132,38 @@ static int find_order(struct level_data *level) {
         return unmake(level);
     }
 
-    i = level->position / cols;
-    j = level->position % cols;
-    for (pos = level->position; pos--;) {
-        if (!j--) {
-            j = cols-1;
-            if (!--i) /* we won't find any dead in last line */
-                return -1;
-        }
-        /* NOTE: i can never be 0 here */
-        debug(("%d in position %d (%d,%d)\n", map[pos], pos, i+1, j+1));
+    for (pos = level->position - 1; pos > cols; pos--) {
+        debug(("%d in position %d (%d,%d)\n", map[pos], pos, i[pos] + 1, j[pos] + 1));
         switch (map[pos]) {
-        case 0:
-        case 4:
-            return -1;                          /* Not supposed to be here */
         case 1:
-            careful_dec(level, pos-cols);
-            if (j)
-                careful_dec(level, pos-1);
-            break;
-        case 3:
-            if (j == 0)                         /* 3 in the corner */
+            careful_dec(level, up[pos]);
+            careful_dec(level, left[pos]);
+            if (*deadsfound > real_deathcount) /* the only case when we can get too much deads */
                 return -1;
-            continue;
+            break;
         case 2:
-            if (j == 0)                         /* Nowhere to go, just one direction */
+            if (j[pos] == 0)                         /* Nowhere to go, just one direction */
                 continue;
-            if (map[pos-1] == 1) {              /* this 2 was before that neighbour */
-                careful_dec(level, pos-cols);
-            } else if (map[pos-1] == 4) {       /* this 2 was after that neighbour */
-                careful_dec(level, pos-1);
-            } else if (j == cols-1 && map[pos-cols] == 1) {
-                careful_dec(level, pos-1);
-            } else if (j == cols-1 && map[pos-cols] == 4) {
-                careful_dec(level, pos-cols);
-            } else {
+            if (right[pos] == MAX_AREA+2)
+                switch (map[up[pos]]) {
+                case 1:
+                    careful_dec(level, left[pos]);
+                    goto switch_exit;
+                case 4:
+                    careful_dec(level, up[pos]);
+                    goto switch_exit;
+                default:
+                    break;
+                }
+
+            switch (map[left[pos]]) {
+            case 1:
+                careful_dec(level, up[pos]);
+                break;
+            case 4:
+                careful_dec(level, left[pos]);
+                break;
+            default:
                 debug(("Forking. Do some unwinding first\n"));
                 level->position = pos;
                 if (level->last_unmake - pos > UNWIND_THRESHOLD && unmake(level) == -1)
@@ -177,31 +171,35 @@ static int find_order(struct level_data *level) {
                 debug(("Forking now\n"));
                 /* Path 1 uses new level, path 2 uses current level */
                 memcpy(level+1, level, sizeof(struct level_data));
-                careful_dec(level, pos-cols);
-                careful_dec(level+1, pos-1);
+                careful_dec(level, up[pos]);
+                careful_dec(level+1, left[pos]);
                 if (find_order(level+1) == 0) /* Path 1 succeeded */
                     return 0;
                 debug(("Path 1 failed\n"));
+                break;
             }
             break;
+        case 3:
+            if (j[pos] == 0)                         /* 3 in the corner */
+                return -1;
+            continue;
+/*      case 4: Not supposed to be here */
         default:
             return -1; /* What? */
         }
 
+switch_exit:
 #ifndef ONLINE_JUDGE
         printlevel(level);
         printf(" ||\n \\/\n");
 #endif
-        if (*deadsfound < real_deathcount)
-            continue;
         if (*deadsfound == real_deathcount) {
             level->position = 0;
             return unmake(level);
-        }
-        return -1; /* deadsfound > real_deathcount */
+        } /* else deadsfound < real_deathcount */
     }
 
-    debug(("Nah, we lost some deads\n"));
+    debug(("We lost some deads\n"));
     return -1;
 }
 
@@ -224,6 +222,15 @@ int main() {
     }
 #endif
     real_deathcount /= 4;
+
+    for (pos = 0; pos < area; pos++) {
+        j[pos] = pos % cols;
+        i[pos] = pos / cols;
+        up[pos] = pos < cols ? MAX_AREA + 1 : pos - cols;
+        down[pos] = pos >= area - cols ? MAX_AREA + 1 : pos + cols;
+        left[pos] = pos % cols == 0 ? MAX_AREA + 1 : pos - 1;
+        right[pos] = (pos+1) % cols == 0 ? MAX_AREA + 1: pos + 1;
+    }
 
     memcpy(start->unwinded, start->map, sizeof(start->map));
     start->unwinded[area] = 1;

@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#ifdef NO_INLINE
+#ifndef NO_INLINE
 #define inline __inline
 #endif
 
@@ -183,6 +183,12 @@ static int find_order(struct level_data *level) {
             } else if (j && map[pos-1] == 4) {  /* this 2 was after that neighbour */
                 link[pos].h = YOUNGER;
                 link[pos].v = OLDER;
+            } else if (i && j == cols-1 && map[pos-cols] == 1) {
+                link[pos].h = YOUNGER;
+                link[pos].v = OLDER;
+            } else if (i && j == cols-1 && map[pos-cols] == 4) {
+                link[pos].h = OLDER;
+                link[pos].v = YOUNGER;
             } else if (!i) {                    /* Nowhere to go but to the right */
                 link[pos].h = OLDER;
             } else if (!j) {                    /* Nowhere to go but up */

@@ -41,6 +41,16 @@ const int f[] = {-4, 4, 2, 0, -2, -4};
 
 static int cols, rows, area, n5s, nqs;
 
+static inline int min_5s(int tension, int nqs) {
+    int m5s = -((cols + 1 - tension) >> 3);
+    return m5s < 0 ? 0 : m5s;
+}
+
+static inline int max_5s(int tension, int nqs) {
+    int m5s = ((cols + 1 + tension) >> 3);
+    return m5s > nqs ? nqs : m5s;
+}
+
 #ifndef ONLINE_JUDGE
 
 static void print_out(cell_t *map) {
@@ -52,6 +62,36 @@ static void print_out(cell_t *map) {
         printf("\n");
     }
 }
+
+static void print_sliced(cell_t *map, int pos, int t1, int t2, int q1, int q2) {
+    int i, j, k, p;
+    for (i = 0, p = 0; i < rows; i++) {
+        for (j = 0; j < cols; j++, p++) {
+            if (p == pos) {
+                for (k = j; k < cols; k++)
+                    printf("  ");
+                printf("  v  %d (%d to %d)\n", t1, min_5s(t1, q1), max_5s(t1, q1));
+                for (k = 0; k < j; k++)
+                    printf("  ");
+            }
+            printf("%d ", map[p]);
+            if (p == pos) {
+                for (k = j+1; k < cols; k++)
+                    printf("  ");
+                printf(" < > %d\n", f[map[pos]]);
+                for (k = 0; k <= j; k++)
+                    printf("  ");
+            }
+        }
+        if (i == pos/cols) {
+            for (k = j+1; k < cols; k++)
+                printf("  ");
+            printf("  ^  %d (%d to %d)", t2, min_5s(t2, q2), max_5s(t2, q2));
+        }
+        printf("\n");
+    }
+}
+
 #endif
 
 /* Remove a bacteria from a neighbour cell */
@@ -108,30 +148,45 @@ static inline int unmake(struct level *level) {
 
 static int analyze(struct level *level) {
     int i, j, pos, qnum, tension1 = 0, tension2 = level->tension2;
+    int minq1, maxq1, minq2, maxq2;
+    int tm;
     cell_t *map = level->map;
 
     print_out(map);
+    printf("========================\n");
     /* first line */
-    for (pos = 0; pos < cols; pos++) {
+    for (pos = 0; pos < cols; pos++)
+        tension1 += f[map[pos]];
+    tension1 -= cols + 2;
+    tension2 -= tension1;
+
+    for (qnum = 0, i = 0; qnum < nqs; qnum++) {
+        pos = qs[qnum].pos;
+        tm = 0;
+        for (; i < pos; i++) {
+            tm += f[map[i]];
+            if (right[i] == SAFE_SPOT)
+                tm -= 2;
+        }
+
+        tension1 += tm;
+        tension2 -= tm;
+
+        tension2 -= f[map[pos]];
+        print_sliced(map, pos, tension1, tension2, qnum, nqs - qnum - 1);
+        printf(" ||\n \\/\n");
         tension1 += f[map[pos]];
     }
-    tension1 -= cols + 2;
-
-    tension2 -= tension1;
-    
+/*    
     for (i = 1; i < rows - 1; i++) {
-        debug(("Starting line %d\n", i+1));
-        debug(("Tension of the first %d lines: %d\n", i, tension1));
-        debug(("Tension of the last %d lines: %d\n", rows - i, tension2));
         tension1 += f[map[pos]] - 1;
         tension2 -= f[map[pos]] + f[map[pos+1]] - 1;
         pos++;
-        debug(("Tension high: %d, tension low: %d, tension mid: %d\n", tension1, tension2, f[map[pos]]));
         for (j = 1; j < cols - 1; j++, pos++) {
-            debug(("Looking at %d in position %d:%d\n", map[pos], i+1, j+1));
+            print_sliced(map, pos, tension1, tension2);
+            printf(" ||\n \\/\n");
             debug(("High: %d to %d 5s\n", -((cols + 1 - tension1) >> 3), (cols + 1 + tension1) >> 3));
             debug(("Low:  %d to %d 5s\n", -((cols + 1 - tension2) >> 3), (cols + 1 + tension2) >> 3));
-            debug(("Tension high: %d, tension low: %d, tension mid: %d\n", tension1, tension2, f[map[pos]]));
             tension1 += f[map[pos]];
             tension2 -= f[map[pos+1]];
         }
@@ -140,7 +195,7 @@ static int analyze(struct level *level) {
         pos++;
         debug(("Finished line %d. ", i+1));
     }
-
+*/
     return -1;
 }
 

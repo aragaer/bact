@@ -6,22 +6,24 @@
 #define debug(x) printf x
 #endif
 
-static char message[200001];
+static char message[200002];
 
 int main() {
-    int c = 0;
-    scanf("%s", message);
+    char *src, *dst;
+    scanf("%s", message+1);
+    src = message + 2;
+    dst = message + 1;
 
-    while (c < strlen(message)) {
-        if (message[c] == message[c+1]) {
-            memmove(message+c, message+c+2, strlen(message+c) + 1);
-            if (--c < 0)
-                c = 0;
-            debug(("%s\n", message));
+    while (*src) {
+        debug(("[%s] src = %d, dst = %d\n", message+1, src-message, dst-message));
+        if (*src == *dst) {
+            --dst;
         } else {
-            c++;
+            *++dst = *src;
         }
+        src++;
     }
-    printf("%s\n", message);
+    *++dst = 0;
+    printf("%s\n", message+1);
     exit(0);
 }

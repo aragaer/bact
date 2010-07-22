@@ -38,10 +38,11 @@ static int cols, rows, area, real_deathcount;
 
 struct {
 	int forks;
-	int brokens;
+	int brokens1;
+	int brokens2;
         int failed_forks;
         int prevented;
-} stat = {0,0,0,0};
+} stat = {0,0,0,0,0};
 
 #ifndef ONLINE_JUDGE
 
@@ -148,33 +149,53 @@ static int find_order(struct level_data *level) {
         debug(("%d in position %d (%d,%d)\n", map[pos], pos, i[pos] + 1, j[pos] + 1));
         switch (map[pos]) {
         case 1:
-            if (map[left[pos]] == 1) {
+/* Not really a huge optimization
+            switch (map[left[pos]]) {
+            case 4:
+                if (j[pos] == 1) {
+            case 1:
+                    stat.prevented++;
+                    return -1;
+                }
+                break;
+            default:
+                break;
+            }
+*/
+            if ((right[pos] == SAFE_SPOT || left[pos] == SAFE_SPOT)
+                    && map[up[pos]] == 1) {
                 stat.prevented++;
                 return -1;
             }
             careful_dec(level, up[pos]);
             dumb_dec(level, left[pos]);
-            if (*deadsfound > real_deathcount) /* the only case when we can get too much deads */
-                return -1;
             break;
         case 2:
-            if (j[pos] == 0)                         /* Nowhere to go, just one direction */
-                continue;
+            if (left[pos] == SAFE_SPOT) {               /* Nowhere to go, just one direction */
+                if (map[up[pos]] == 4) {
+                    stat.prevented++;
+                    return -1;
+                }
+                break;
+            }
             if (right[pos] == SAFE_SPOT)
                 switch (map[up[pos]]) {
                 case 1:
+/* Not really a huge optimization
                     if (map[left[pos]] == 1) {
                         stat.prevented++;
                         return -1;
                     }
+*/
                     dumb_dec(level, left[pos]);
                     goto switch_exit;
                 case 4:
-                    if (map[left[pos]] == 4
-                        || (j[pos] == 1 && map[left[pos]] == 3)) {
+/* Not really a huge optimization
+                    if (map[left[pos]] == 4) {
                         stat.prevented++;
                         return -1;
                     }
+*/
                     dumb_dec(level, up[pos]);
                     goto switch_exit;
                 default:
@@ -216,13 +237,24 @@ static int find_order(struct level_data *level) {
             break;
         case 3:
             if (j[pos] == 0) {                          /* 3 in the corner */
-		stat.brokens++;
+		stat.brokens1++;
                 return -1;
             }
-            continue;
+            if (right[pos] == SAFE_SPOT && map[up[pos]] == 4) {
+                stat.prevented++;
+                return -1;
+            }
+/*          Not really a huge optimization
+            if ((j[pos] == 1 && map[left[pos]] == 3)
+                    || map[left[pos]] == 4) {
+                stat.prevented++;
+                return -1;
+            }
+*/
+            break;
 /*      case 4: Not supposed to be here */
         default:
-            stat.brokens++;
+            stat.brokens2++;
             return -1; /* What? */
         }
 
@@ -282,7 +314,7 @@ int main() {
     } else
         printf("No\n");
 
-    debug(("Stat: forks: %d, broken: %d, failed forks: %d, prevented brokens: %d\n",
-        stat.forks, stat.brokens, stat.failed_forks, stat.prevented));
+    debug(("Stat: forks: %d, broken: %d/%d, failed forks: %d, prevented brokens: %d\n",
+        stat.forks, stat.brokens1, stat.brokens2, stat.failed_forks, stat.prevented));
 }
 

@@ -17,9 +17,10 @@
 #define UNWIND_THRESHOLD 10
 #define MAX_SIZE 20
 #define MAX_AREA MAX_SIZE*MAX_SIZE
+#define SAFE_SPOT MAX_AREA+1
 #define MAX_LEVELS MAX_AREA - 2*MAX_SIZE + 1
 
-#define cell_t char
+#define cell_t unsigned char
 
 #define UNWIND_THRESHOLD 10
 
@@ -35,13 +36,12 @@ static int solution[MAX_AREA];
 
 static int cols, rows, area, real_deathcount;
 
-/* 
-* Links.
-*  bit 0 shows relation from THIS cell to the cell above it.
-*  bit 1 shows relation from THIS cell to the cell to the left from it.
-*  0 means that THIS cell is OLDER and bacteria moved TO here
-*  1 means that THIS cell is YOUNGER and bacteria moved FROM here
-*/
+struct {
+	int forks;
+	int brokens;
+        int failed_forks;
+        int prevented;
+} stat = {0,0,0,0};
 
 #ifndef ONLINE_JUDGE
 
@@ -86,6 +86,18 @@ static inline void careful_dec(struct level_data *level, int pos) {
     }
 }
 
+/* only when we are sure it is not 1 */
+static inline void dumb_dec(struct level_data *level, int pos) {
+    level->map[pos]--;
+}
+
+/* only when we are sure it IS 1 */
+static inline dumb_dec_to_5(struct level_data *level, int pos) {
+    level->map[pos] = 4;
+    level->found5s++;
+    level->unwinded[pos] = 5;
+}
+
 /* 0 if everything is solved, -1 on error, 1 on partial success */
 static inline int unmake(struct level_data *level) {
     cell_t *map = level->unwinded;
@@ -117,7 +129,7 @@ static inline int unmake(struct level_data *level) {
             while (map[pos] != 1)
                 pos++;
     }
-    level->last_unmake = limit;
+    level->last_unmake = level->position;
     level->solution_depth = local_depth;
     debug(("Unmade %d of %d below position %d\n", local_depth, area, level->position));
     return local_depth != area;
@@ -136,21 +148,34 @@ static int find_order(struct level_data *level) {
         debug(("%d in position %d (%d,%d)\n", map[pos], pos, i[pos] + 1, j[pos] + 1));
         switch (map[pos]) {
         case 1:
+            if (map[left[pos]] == 1) {
+                stat.prevented++;
+                return -1;
+            }
             careful_dec(level, up[pos]);
-            careful_dec(level, left[pos]);
+            dumb_dec(level, left[pos]);
             if (*deadsfound > real_deathcount) /* the only case when we can get too much deads */
                 return -1;
             break;
         case 2:
             if (j[pos] == 0)                         /* Nowhere to go, just one direction */
                 continue;
-            if (right[pos] == MAX_AREA+1)
+            if (right[pos] == SAFE_SPOT)
                 switch (map[up[pos]]) {
                 case 1:
-                    careful_dec(level, left[pos]);
+                    if (map[left[pos]] == 1) {
+                        stat.prevented++;
+                        return -1;
+                    }
+                    dumb_dec(level, left[pos]);
                     goto switch_exit;
                 case 4:
-                    careful_dec(level, up[pos]);
+                    if (map[left[pos]] == 4
+                        || (j[pos] == 1 && map[left[pos]] == 3)) {
+                        stat.prevented++;
+                        return -1;
+                    }
+                    dumb_dec(level, up[pos]);
                     goto switch_exit;
                 default:
                     break;
@@ -161,30 +186,43 @@ static int find_order(struct level_data *level) {
                 careful_dec(level, up[pos]);
                 break;
             case 4:
-                careful_dec(level, left[pos]);
+                dumb_dec(level, left[pos]);
                 break;
             default:
                 debug(("Forking. Do some unwinding first\n"));
                 level->position = pos;
-                if (level->last_unmake - pos > UNWIND_THRESHOLD && unmake(level) == -1)
-                    return -1;
+                if (level->last_unmake - pos > UNWIND_THRESHOLD) {
+                    int res = unmake(level);
+                    if (res != 1) /* Not PARTIAL success */
+                        return res;
+                }
                 debug(("Forking now\n"));
+                stat.forks++;
                 /* Path 1 uses new level, path 2 uses current level */
                 memcpy(level+1, level, sizeof(struct level_data));
-                careful_dec(level, up[pos]);
-                careful_dec(level+1, left[pos]);
+                if (map[left[pos]] == 2) {
+                    dumb_dec(level+1, left[pos]);
+                    careful_dec(level, up[pos]);
+                } else { //left is 3
+                    dumb_dec(level, left[pos]);
+                    careful_dec(level+1, up[pos]);
+                }
                 if (find_order(level+1) == 0) /* Path 1 succeeded */
                     return 0;
+                stat.failed_forks++;
                 debug(("Path 1 failed\n"));
                 break;
             }
             break;
         case 3:
-            if (j[pos] == 0)                         /* 3 in the corner */
+            if (j[pos] == 0) {                          /* 3 in the corner */
+		stat.brokens++;
                 return -1;
+            }
             continue;
 /*      case 4: Not supposed to be here */
         default:
+            stat.brokens++;
             return -1; /* What? */
         }
 
@@ -226,10 +264,10 @@ int main() {
     for (pos = 0; pos < area; pos++) {
         j[pos] = pos % cols;
         i[pos] = pos / cols;
-        up[pos] = pos < cols ? MAX_AREA + 1 : pos - cols;
-        down[pos] = pos >= area - cols ? MAX_AREA + 1 : pos + cols;
-        left[pos] = pos % cols == 0 ? MAX_AREA + 1 : pos - 1;
-        right[pos] = (pos+1) % cols == 0 ? MAX_AREA + 1: pos + 1;
+        up[pos] = pos < cols ? SAFE_SPOT : pos - cols;
+        down[pos] = pos >= area - cols ? SAFE_SPOT : pos + cols;
+        left[pos] = pos % cols == 0 ? SAFE_SPOT : pos - 1;
+        right[pos] = (pos+1) % cols == 0 ? SAFE_SPOT : pos + 1;
     }
 
     memcpy(start->unwinded, start->map, sizeof(start->map));
@@ -240,7 +278,11 @@ int main() {
     if (find_order(start) == 0) {
         printf("Yes\n");
         for (pos = area; pos--; )
-            printf("%d %d\n", solution[pos] / cols + 1, solution[pos] % cols + 1);
+            printf("%d %d\n", i[solution[pos]] + 1, j[solution[pos]] + 1);
     } else
         printf("No\n");
+
+    debug(("Stat: forks: %d, broken: %d, failed forks: %d, prevented brokens: %d\n",
+        stat.forks, stat.brokens, stat.failed_forks, stat.prevented));
 }
+

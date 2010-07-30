@@ -4,7 +4,7 @@ use Time::HiRes qw( clock_gettime clock_getres clock_nanosleep
 		      ITIMER_REAL ITIMER_VIRTUAL ITIMER_PROF ITIMER_REALPROF );
 
 my $times = shift;
-my $bigtime;
+my $bigtime, $tottime;
 
 for (1..$times) {
     `./gen.pl | tr 5 1 > tmp`;
@@ -23,6 +23,9 @@ for (1..$times) {
     if ($res) {
         `mv tmp failed$_ && mv tmp2 failed_out$_`;
     }
+    $tottime += $tdiff;
 }
 
-print "Most time spent: $bigtime\n";
+$tottime/=$times;
+
+print "Most time spent: $bigtime, average = $tottime\n";

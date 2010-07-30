@@ -15,6 +15,8 @@ sub pout {
 
 while (<>) {
     chomp;
+    s/^ //;
+    s/ +/ /;
     my ($x, $y) = split;
     $arr[$x][$y] = 1;
     $arr[$x-1][$y]++ if $arr[$x-1][$y];
